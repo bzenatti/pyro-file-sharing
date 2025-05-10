@@ -1,7 +1,8 @@
+# main.py
 import re
 import threading
 import time
-from Pyro5.api import Daemon
+from Pyro5.api import Daemon, Proxy
 from services.peer import Peer
 from common.utils import get_daemon_and_ns
 import os
@@ -33,10 +34,10 @@ def main(peer_id):
     clear_terminal()
     daemon, ns = get_daemon_and_ns()
     peer = Peer(peer_id)
-    uri = daemon.register(peer)
-    ns.register(peer_id, uri)
+    # uri = daemon.register(peer) # Remove this line
+    # ns.register(peer_id, uri) # Remove this line
 
-    print(f"{peer_id} running. URI: {uri}")
+    #print(f"{peer_id} running. URI: {uri}")
 
     # Start peer in a separate thread
     peer_thread = threading.Thread(target=peer.start, daemon=True)
@@ -50,7 +51,7 @@ def main(peer_id):
 
     # Clean up Pyro objects
     daemon.close()
-    ns.close()
+    # ns.close() # Remove this line
 
 if __name__ == "__main__":
     print("Enter the peer ID (e.g., Peer1, Peer2, Peer3, Peer4, Peer5):")

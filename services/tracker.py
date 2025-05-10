@@ -33,3 +33,6 @@ class Tracker:
 
     def ping(self):
         pass
+
+    def log_file_request(self, peer_id, file_name):
+        print(f"[Tracker] Peer {peer_id} requested file '{file_name}' which is not available.")
