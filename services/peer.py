@@ -26,18 +26,34 @@ class Peer:
         self.active_peers = {}
         self.daemon = None
         self.ns = None
+        self.running = True
+        self.threads = []
+        self.tracker_name = None
 
     def start(self):
+        # Setup PyRO daemon and register with name server
         self.daemon, self.ns = get_daemon_and_ns()
         uri = self.daemon.register(self)
         self.ns.register(self.peer_id, uri)
         print(f"[{self.peer_id}] Registered in Name Server with URI: {uri}")
+    
+        # Start background threads
+        thread1 = threading.Thread(target=self.tracker_discovery_and_election, daemon=True)
+        thread1.start()
+        self.threads.append(thread1)
         
-        threading.Thread(target=self.tracker_discovery_and_election, daemon=True).start()
-        threading.Thread(target=self.monitor_heartbeat, daemon=True).start()
-        threading.Thread(target=self.send_heartbeat, daemon=True).start()
+        thread2 = threading.Thread(target=self.monitor_heartbeat, daemon=True)
+        thread2.start()
+        self.threads.append(thread2)
         
-        self.daemon.requestLoop()
+        thread3 = threading.Thread(target=self.send_heartbeat, daemon=True)
+        thread3.start()
+        self.threads.append(thread3)
+    
+    def run_daemon(self):
+        if self.daemon:
+            self.daemon.requestLoop(loopCondition=lambda: self.running)
+            print(f"[{self.peer_id}] Daemon loop exited")
 
     def _lookup_tracker(self):
         ns = locate_ns()
@@ -89,7 +105,7 @@ class Peer:
     def _start_election_if_needed(self, ns=None):
         if ns is None:
             ns = locate_ns()
-            local_ns = True
+            local_ns = True 
         else:
             local_ns = False
         
@@ -186,7 +202,7 @@ class Peer:
     def send_heartbeat(self):
         failed_heartbeats = {}
         
-        while True:
+        while self.running:
             if self.is_tracker:
                 try:
                     ns = locate_ns()
@@ -225,34 +241,44 @@ class Peer:
                 self.timer_expiry = start_timer_with_random_interval(TRACKER_TIMEOUT_MIN, TRACKER_TIMEOUT_MAX) + time.time()
 
     def monitor_heartbeat(self):
-        while True:
+        while self.running:
             now = time.time()
             
             self.active_peers[self.peer_id] = now
             
+            # Check for inactive peers
             inactive = []
             for p, t in self.active_peers.items():
-                if p != self.peer_id and now - t > TRACKER_TIMEOUT_MAX:
+                if p != self.peer_id and now - t > TRACKER_TIMEOUT_MAX * 2:
                     inactive.append(p)
             
             for p in inactive:
+                print(f"[{self.peer_id}] Peer {p} is inactive and will be removed")
                 del self.active_peers[p]
                 
+                # If the tracker went down, clear tracker info and trigger election
                 if p == self.tracker_peer_id and not self.is_tracker:
+                    print(f"[{self.peer_id}] Tracker {p} is down, clearing tracker info")
                     self.tracker_uri = None
                     self.tracker_peer_id = None
+                    self._start_election_if_needed()
             
+            # Check tracker timeout
             if not self.is_tracker and self.tracker_peer_id:
                 with self.tracker_timer_lock:
                     if now > self.timer_expiry:
+                        print(f"[{self.peer_id}] Tracker timeout occurred. Starting election.")
+                        self.tracker_uri = None
+                        self.tracker_peer_id = None
                         self._start_election_if_needed()
                         self.timer_expiry = time.time() + random.uniform(TRACKER_TIMEOUT_MAX * 2, TRACKER_TIMEOUT_MAX * 3)
             
+            # If no tracker exists, try election
             if not self.is_tracker and not self.tracker_uri:
                 if not hasattr(self, 'last_election_attempt') or now - self.last_election_attempt > 5:
                     self._start_election_if_needed()
                     self.last_election_attempt = now
-            
+        
             time.sleep(HEARTBEAT_INTERVAL * 2)
 
     def register_files_with_tracker(self):
@@ -280,10 +306,12 @@ class Peer:
 
     def query_and_download(self, file_name):
 
+        #Own file
         if file_name in self.files:
             print(f"[{self.peer_id}] You already own '{file_name}'.")
             return
 
+        #Verify if there is a tracker
         if not self.tracker_uri:
             print(f"[{self.peer_id}] Tracker not available. Looking up again...")
             self.tracker_uri = self._lookup_tracker()
@@ -291,6 +319,7 @@ class Peer:
                 print(f"[{self.peer_id}] Still no tracker available.")
                 return
         
+        #Who has the file?
         try:
             tracker = Proxy(self.tracker_uri)
             owners = tracker.query_file(file_name)
@@ -376,3 +405,57 @@ class Peer:
             sel = []
 
         return [f"file{n}.txt" for n in sel if os.path.exists(os.path.join(files_dir, f"file{n}.txt"))]
+    
+    def shutdown(self):
+        if not self.running:
+            return
+        
+        print(f"[{self.peer_id}] Initiating shutdown sequence...")
+        self.running = False
+        
+        # Wait for threads to terminate
+        for thread in self.threads:
+            if thread.is_alive():
+                thread.join(timeout=1.0)
+        
+        # Notify tracker if this peer is leaving and we're not the tracker
+        if self.tracker_uri and not self.is_tracker:
+            try:
+                proxy = Proxy(self.tracker_uri)
+                proxy.remove_peer(self.peer_id)
+                proxy._pyroRelease()
+                print(f"[{self.peer_id}] Notified tracker of departure")
+            except Exception as e:
+                print(f"[{self.peer_id}] Failed to notify tracker: {e}")
+        
+        # Close the daemon
+        if self.daemon:
+            try:
+                self.daemon.close()
+                print(f"[{self.peer_id}] Daemon closed")
+            except Exception as e:
+                print(f"[{self.peer_id}] Error closing daemon: {e}")
+        
+        # Remove entries from name server
+        try:
+            ns = locate_ns()
+            
+            # Remove peer entry
+            try:
+                ns.remove(self.peer_id)
+                print(f"[{self.peer_id}] Removed from name server")
+            except Exception as e:
+                print(f"[{self.peer_id}] Error removing peer from name server: {e}")
+            
+            # Remove tracker entry if applicable
+            if self.is_tracker:
+                for entry in ns.list(prefix=TRACKER_NAME_PREFIX).keys():
+                    try:
+                        ns.remove(entry)
+                        print(f"[{self.peer_id}] Removed tracker entry {entry} from name server")
+                    except Exception as e:
+                        print(f"[{self.peer_id}] Error removing tracker {entry}: {e}")
+            
+            ns._pyroRelease()
+        except Exception as e:
+            print(f"[{self.peer_id}] Name server error: {e}")

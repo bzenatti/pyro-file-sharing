@@ -36,3 +36,13 @@ class Tracker:
 
     def log_file_request(self, peer_id, file_name):
         print(f"[Tracker] Peer {peer_id} requested file '{file_name}' which is not available.")
+
+    def remove_peer(self, peer_id):
+       if peer_id in self.peers:
+           del self.peers[peer_id]
+       for file, owners in list(self.file_index.items()):
+           if peer_id in owners:
+               owners.remove(peer_id)
+               if not owners:
+                   del self.file_index[file]
+       print(f"[Tracker] Removed peer {peer_id}")
