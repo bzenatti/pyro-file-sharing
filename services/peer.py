@@ -28,10 +28,8 @@ class Peer:
         self.ns = None
         self.running = True
         self.threads = []
-        self.tracker_name = None
 
     def start(self):
-        # Setup PyRO daemon and register with name server
         self.daemon, self.ns = get_daemon_and_ns()
         uri = self.daemon.register(self)
         self.ns.register(self.peer_id, uri)
@@ -177,13 +175,13 @@ class Peer:
     def become_tracker(self, epoch=None):
         self.is_tracker = True
         self.tracker_peer_id = self.peer_id
-        tracker_instance = Tracker()
+        tracker_instance = Tracker(self.peer_id)
+        self.tracker_instance = tracker_instance
         uri = self.daemon.register(tracker_instance)
         
         global GLOBAL_EPOCH
         if epoch is None:
-            epoch = GLOBAL_EPOCH
-            
+            epoch = GLOBAL_EPOCH        
         tracker_name = f"{TRACKER_NAME_PREFIX}{epoch}"
         
         ns = locate_ns()
@@ -197,48 +195,57 @@ class Peer:
         self.tracker_uri = uri
         
         tracker_instance.register_peer(self.peer_id, self.files)
-        print(f"[{self.peer_id}] Registered own files with self as tracker")
+        print(f"\n[{self.peer_id}] Became tracker (epoch {epoch}).")
+        print(f"\n[{self.peer_id}] Registered own files with self as tracker")
 
     def send_heartbeat(self):
-        failed_heartbeats = {}
-        
-        while self.running:
-            if self.is_tracker:
+            failed_to_tracker = 0          #for testing with more than one try
+            while self.running:
                 try:
                     ns = locate_ns()
+                    if not self.is_tracker and self.tracker_uri:
+                        try:
+                            tracker_proxy = Proxy(self.tracker_uri)
+                            tracker_proxy.receive_heartbeat(self.peer_id)
+                            tracker_proxy._pyroRelease()
+                            failed_to_tracker = 0          
+                        except Exception as e:
+                            failed_to_tracker += 1
+                            if failed_to_tracker >= 1:
+                                print(f"\n[{self.peer_id}] Tracker unreachable on SEND HB. Clearing tracker info and triggering election.") 
+                                self.tracker_uri = None
+                                self.tracker_peer_id = None
+                                failed_to_tracker = 0
+                                
+                            else:
+                                print(f"[{self.peer_id}] Failed HB to tracker: {e}")
+
                     for name, uri in ns.list(prefix="Peer").items():
                         if name == self.peer_id:
                             continue
-                        
-                        if name in failed_heartbeats and failed_heartbeats[name] >= 3:
-                            continue
-                            
                         try:
                             proxy = Proxy(uri)
                             proxy.receive_heartbeat(self.peer_id)
                             proxy._pyroRelease()
-                            if name in failed_heartbeats:
-                                del failed_heartbeats[name]
-                        except Exception as e:
-                            failed_heartbeats[name] = failed_heartbeats.get(name, 0) + 1
-                            
-                            if failed_heartbeats[name] >= 3:
-                                if name in self.active_peers:
-                                    del self.active_peers[name]
-                            else:
-                                print(f"[{self.peer_id}] Failed to send heartbeat to {name}: {e}")
+                        except Exception:
+                            pass  
+
                     ns._pyroRelease()
                 except Exception as e:
-                    print(f"[{self.peer_id}] Error in heartbeat send: {e}")
-            time.sleep(HEARTBEAT_INTERVAL)
+                    print(f"\n[{self.peer_id}] Heartbeat send error: {e}")
+
+                time.sleep(HEARTBEAT_INTERVAL)
 
     def receive_heartbeat(self, sender_id):
         self.active_peers[sender_id] = time.time()
         self.active_peers[self.peer_id] = time.time()
-        
+
         if not self.is_tracker and sender_id == self.tracker_peer_id:
             with self.tracker_timer_lock:
-                self.timer_expiry = start_timer_with_random_interval(TRACKER_TIMEOUT_MIN, TRACKER_TIMEOUT_MAX) + time.time()
+                self.timer_expiry = start_timer_with_random_interval(
+                    TRACKER_TIMEOUT_MIN, TRACKER_TIMEOUT_MAX
+                )
+        return True          
 
     def monitor_heartbeat(self):
         while self.running:
@@ -350,19 +357,17 @@ class Peer:
             return
         
         if content is None:
-            print(f"[{self.peer_id}] File not available on peer {peer_to_contact}.")
+            print(f"[{self.peer_id}] File not available on peer {peer_to_contact}. Tracker error")
             return
         
         file_path = os.path.join("files", file_name)
         try:
             with open(file_path, "w") as f:
                 f.write(content)
-            print(f"[{self.peer_id}] Successfully downloaded '{file_name}'.")
             
-            if file_name not in self.files:
-                self.files.append(file_name)
-                print(f"[{self.peer_id}] Added '{file_name}' to local file list.")
-                self.register_files_with_tracker()
+            self.files.append(file_name)
+            print(f"[{self.peer_id}] Added '{file_name}' to local file list.")
+            self.register_files_with_tracker()
         except Exception as e:
             print(f"[{self.peer_id}] Error writing file: {e}")
 
@@ -446,15 +451,6 @@ class Peer:
                 print(f"[{self.peer_id}] Removed from name server")
             except Exception as e:
                 print(f"[{self.peer_id}] Error removing peer from name server: {e}")
-            
-            # Remove tracker entry if applicable
-            if self.is_tracker:
-                for entry in ns.list(prefix=TRACKER_NAME_PREFIX).keys():
-                    try:
-                        ns.remove(entry)
-                        print(f"[{self.peer_id}] Removed tracker entry {entry} from name server")
-                    except Exception as e:
-                        print(f"[{self.peer_id}] Error removing tracker {entry}: {e}")
             
             ns._pyroRelease()
         except Exception as e:

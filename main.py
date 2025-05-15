@@ -1,16 +1,7 @@
 import re
 import threading
-import time
-from Pyro5.api import Daemon
 from services.peer import Peer
-from common.utils import get_daemon_and_ns
 import os
-import signal
-
-
-def clear_terminal():
-   os.system('cls' if os.name == 'nt' else 'clear')
-
 
 class PeerMenu(threading.Thread):
     def __init__(self, peer):
@@ -52,9 +43,8 @@ class PeerMenu(threading.Thread):
         print("Stopping menu...")
         self._stop_event.set()
 
-
 def main(peer_id):
-    clear_terminal()
+    os.system('cls' if os.name == 'nt' else 'clear') #clear terminal
     peer = Peer(peer_id)
     peer.start()
 
@@ -69,7 +59,6 @@ def main(peer_id):
         peer.shutdown()
         menu.stop()
         print("Exited successfully")
-
 
 if __name__ == "__main__":
    print("Enter the peer ID (e.g., Peer1, Peer2, Peer3, Peer4, Peer5):")
