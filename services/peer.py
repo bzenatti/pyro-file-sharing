@@ -16,7 +16,7 @@ GLOBAL_EPOCH_LOCK = threading.Lock()
 class Peer:
     def __init__(self, peer_id):
         self.peer_id = peer_id
-        self.files = self._load_local_files()
+        self.files = load_local_files(self.peer_id)
         self.tracker_uri = None
         self.tracker_peer_id = None
         self.voted_epochs = set()
@@ -33,7 +33,7 @@ class Peer:
         self.daemon, self.ns = get_daemon_and_ns()
         uri = self.daemon.register(self)
         self.ns.register(self.peer_id, uri)
-        print(f"[{self.peer_id}] Registered in Name Server with URI: {uri}")
+        print(f"\n[{self.peer_id}] Registered in Name Server with URI: {uri}")
     
         # Start background threads
         thread1 = threading.Thread(target=self.tracker_discovery_and_election, daemon=True)
@@ -51,7 +51,7 @@ class Peer:
     def run_daemon(self):
         if self.daemon:
             self.daemon.requestLoop(loopCondition=lambda: self.running)
-            print(f"[{self.peer_id}] Daemon loop exited")
+            print(f"\n[{self.peer_id}] Daemon loop exited")
 
     def _lookup_tracker(self):
         ns = locate_ns()
@@ -64,7 +64,7 @@ class Peer:
             ns._pyroRelease()
             return result
         except Exception as e:
-            print(f"[{self.peer_id}] Error during tracker lookup: {e}")
+            print(f"\n[{self.peer_id}] Error during tracker lookup: {e}")
             ns._pyroRelease()
             return None
 
@@ -90,13 +90,13 @@ class Peer:
                         self.tracker_peer_id = name
                         break
                         
-                print(f"[{self.peer_id}] Found tracker: {self.tracker_uri}")
+                print(f"\n[{self.peer_id}] Found tracker: {self.tracker_uri}")
                 self.register_files_with_tracker()
             else:
-                print(f"[{self.peer_id}] No tracker found. Starting election.")
+                print(f"\n[{self.peer_id}] No tracker found. Starting election.")
                 self._start_election_if_needed(ns)
         except Exception as e:
-            print(f"[{self.peer_id}] Error in tracker discovery: {e}")
+            print(f"\n[{self.peer_id}] Error in tracker discovery: {e}")
             
         ns._pyroRelease()
 
@@ -112,7 +112,7 @@ class Peer:
             if not entries:
                 self._trigger_election()
         except Exception as e:
-            print(f"[{self.peer_id}] Error checking for tracker: {e}")
+            print(f"\n[{self.peer_id}] Error checking for tracker: {e}")
         
         if local_ns:
             ns._pyroRelease()
@@ -123,7 +123,7 @@ class Peer:
             GLOBAL_EPOCH += 1
             epoch = GLOBAL_EPOCH
         
-        print(f"[{self.peer_id}] Starting election for epoch {epoch}")
+        print(f"\n[{self.peer_id}] Starting election for epoch {epoch}")
         
         ns = locate_ns()
         entries = ns.list(prefix=TRACKER_NAME_PREFIX)
@@ -134,7 +134,7 @@ class Peer:
                 if uri == self.tracker_uri:
                     self.tracker_peer_id = name
                     break
-            print(f"[{self.peer_id}] Using existing tracker: {self.tracker_peer_id}")
+            print(f"\n[{self.peer_id}] Using existing tracker: {self.tracker_peer_id}")
             ns._pyroRelease()
             return
         
@@ -156,10 +156,10 @@ class Peer:
         
         majority = len(peer_names) // 2 + 1
         if votes >= majority:
-            print(f"[{self.peer_id}] Won election with {votes} votes")
+            print(f"\n[{self.peer_id}] Won election with {votes} votes")
             self.become_tracker(epoch)
         else:
-            print(f"[{self.peer_id}] Lost election with {votes} votes")
+            print(f"\n[{self.peer_id}] Lost election with {votes} votes")
         
         ns._pyroRelease()
 
@@ -265,7 +265,7 @@ class Peer:
                 
                 # If the tracker went down, clear tracker info and trigger election
                 if p == self.tracker_peer_id and not self.is_tracker:
-                    print(f"[{self.peer_id}] Tracker {p} is down, clearing tracker info")
+                    print(f"\n[{self.peer_id}] Tracker {p} is down, clearing tracker info")
                     self.tracker_uri = None
                     self.tracker_peer_id = None
                     self._start_election_if_needed()
@@ -274,7 +274,7 @@ class Peer:
             if not self.is_tracker and self.tracker_peer_id:
                 with self.tracker_timer_lock:
                     if now > self.timer_expiry:
-                        print(f"[{self.peer_id}] Tracker timeout occurred. Starting election.")
+                        print(f"\n[{self.peer_id}] Tracker timeout occurred. Starting election.")
                         self.tracker_uri = None
                         self.tracker_peer_id = None
                         self._start_election_if_needed()
@@ -290,7 +290,7 @@ class Peer:
 
     def register_files_with_tracker(self):
         if not self.tracker_uri:
-            print(f"[{self.peer_id}] No tracker to register files with.")
+            print(f"\n[{self.peer_id}] No tracker to register files with.")
             return
         
         try:
@@ -302,7 +302,7 @@ class Peer:
                 with self.tracker_timer_lock:
                     self.timer_expiry = time.time() + random.uniform(TRACKER_TIMEOUT_MIN, TRACKER_TIMEOUT_MAX)
         except Exception as e:
-            print(f"[{self.peer_id}] Failed to register files with tracker: {e}")
+            print(f"\n[{self.peer_id}] Failed to register files with tracker: {e}")
             self.tracker_uri = None
             self.tracker_peer_id = None
 
@@ -312,19 +312,9 @@ class Peer:
         ns._pyroRelease()
 
     def query_and_download(self, file_name):
-
-        #Own file
         if file_name in self.files:
-            print(f"[{self.peer_id}] You already own '{file_name}'.")
+            print(f"\n[{self.peer_id}] You already own '{file_name}'.")
             return
-
-        #Verify if there is a tracker
-        if not self.tracker_uri:
-            print(f"[{self.peer_id}] Tracker not available. Looking up again...")
-            self.tracker_uri = self._lookup_tracker()
-            if not self.tracker_uri:
-                print(f"[{self.peer_id}] Still no tracker available.")
-                return
         
         #Who has the file?
         try:
@@ -353,69 +343,32 @@ class Peer:
             peer_proxy._pyroRelease()
             ns._pyroRelease()
         except Exception as e:
-            print(f"[{self.peer_id}] Error contacting {peer_to_contact}: {e}")
+            print(f"\n[{self.peer_id}] Error contacting {peer_to_contact}: {e}")
             return
         
         if content is None:
-            print(f"[{self.peer_id}] File not available on peer {peer_to_contact}. Tracker error")
+            print(f"\n[{self.peer_id}] File not available on peer {peer_to_contact}. Tracker error")
             return
         
-        file_path = os.path.join("files", file_name)
-        try:
-            with open(file_path, "w") as f:
-                f.write(content)
-            
-            self.files.append(file_name)
-            print(f"[{self.peer_id}] Added '{file_name}' to local file list.")
-            self.register_files_with_tracker()
-        except Exception as e:
-            print(f"[{self.peer_id}] Error writing file: {e}")
+        write_file(file_name, content)
+        self.files.append(file_name)
+        print(f"\n[{self.peer_id}] Added '{file_name}' to local file list.")
+        self.register_files_with_tracker()
 
     def get_file(self, file_name):
-        print(f"[{self.peer_id}] Received request for file: {file_name}")
-        path = os.path.join("files", file_name)
-        if os.path.exists(path):
-            with open(path, "r") as f:
-                content = f.read()
-                print(f"[{self.peer_id}] Sending file content for: {file_name}")
-                return content
-        print(f"[{self.peer_id}] File not found: {file_name}")
-        return None
-
-    def _load_local_files(self):
-        files_dir = os.path.join(os.getcwd(), "files")
-        all_files = os.listdir(files_dir)
-
-        def num(fn):
-            m = re.search(r"\d+", fn)
-            return int(m.group()) if m else None
-
-        numbers = [n for n in (num(f) for f in all_files) if n]
-        peer_num = int(re.search(r"\d+", self.peer_id).group())
-
-        def is_prime(n):
-            return n in {1, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47}
-
-        if peer_num == 1:
-            sel = [n for n in numbers if n % 2 == 0]
-        elif peer_num == 2:
-            sel = [n for n in numbers if n % 3 == 0]
-        elif peer_num == 3:
-            sel = [n for n in numbers if n % 4 == 0]
-        elif peer_num == 4:
-            sel = [n for n in numbers if n % 5 == 0]
-        elif peer_num == 5:
-            sel = [n for n in numbers if is_prime(n)]
+        print(f"\n[{self.peer_id}] Received request for file: {file_name}")
+        content = read_file(file_name)
+        if content is not None:
+            print(f"\n[{self.peer_id}] Sending file content for: {file_name}")
         else:
-            sel = []
-
-        return [f"file{n}.txt" for n in sel if os.path.exists(os.path.join(files_dir, f"file{n}.txt"))]
+            print(f"\n[{self.peer_id}] File not found: {file_name}")
+        return content
     
     def shutdown(self):
         if not self.running:
             return
         
-        print(f"[{self.peer_id}] Initiating shutdown sequence...")
+        print(f"\n[{self.peer_id}] Initiating shutdown sequence...")
         self.running = False
         
         # Wait for threads to terminate
@@ -429,17 +382,17 @@ class Peer:
                 proxy = Proxy(self.tracker_uri)
                 proxy.remove_peer(self.peer_id)
                 proxy._pyroRelease()
-                print(f"[{self.peer_id}] Notified tracker of departure")
+                print(f"\n[{self.peer_id}] Notified tracker of departure")
             except Exception as e:
-                print(f"[{self.peer_id}] Failed to notify tracker: {e}")
+                print(f"\n[{self.peer_id}] Failed to notify tracker: {e}")
         
         # Close the daemon
         if self.daemon:
             try:
                 self.daemon.close()
-                print(f"[{self.peer_id}] Daemon closed")
+                print(f"\n[{self.peer_id}] Daemon closed")
             except Exception as e:
-                print(f"[{self.peer_id}] Error closing daemon: {e}")
+                print(f"\n[{self.peer_id}] Error closing daemon: {e}")
         
         # Remove entries from name server
         try:
@@ -448,10 +401,10 @@ class Peer:
             # Remove peer entry
             try:
                 ns.remove(self.peer_id)
-                print(f"[{self.peer_id}] Removed from name server")
+                print(f"\n[{self.peer_id}] Removed from name server")
             except Exception as e:
-                print(f"[{self.peer_id}] Error removing peer from name server: {e}")
+                print(f"\n[{self.peer_id}] Error removing peer from name server: {e}")
             
             ns._pyroRelease()
         except Exception as e:
-            print(f"[{self.peer_id}] Name server error: {e}")
+            print(f"\n[{self.peer_id}] Name server error: {e}")
