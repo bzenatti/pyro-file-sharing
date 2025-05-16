@@ -6,16 +6,13 @@ from common.config import HEARTBEAT_INTERVAL
 
 @expose
 class Tracker:
-    def __init__(self, tracker_peer_id: str):
+    def __init__(self, tracker_peer_id):
         self.tracker_peer_id = tracker_peer_id
         self.file_index: dict[str, list[str]] = {}
         self.peers: dict[str, list[str]] = {}
         self._running = True
         self._last_seen: dict[str, float] = {}
-        self._hb_thread = threading.Thread(
-            target=self._heartbeat_loop,
-            daemon=True
-        )
+        self._hb_thread = threading.Thread(target=self._heartbeat_loop,daemon=True)
         self._hb_thread.start()
 
     def register_peer(self, peer_id, file_list):
@@ -40,9 +37,6 @@ class Tracker:
     def query_file(self, file_name):
         return self.file_index.get(file_name, [])
 
-    def heartbeat(self):
-        return True
-
     def log_file_request(self, peer_id, file_name):
         print(f"\n[Tracker] Peer {peer_id} requested file '{file_name}' which is not available.")
 
@@ -60,23 +54,21 @@ class Tracker:
         while self._running:
             try:
                 ns = locate_ns()
-                for name, uri in ns.list(prefix="Peer").items():
+                peers = ns.list(prefix="Peer")
+                ns._pyroRelease()
+                
+                for name, uri in peers.items():
                     try:
                         proxy = Proxy(uri)
-                        proxy.receive_heartbeat(self.tracker_peer_id)
+                        result = proxy.receive_tracker_heartbeat(self.tracker_peer_id)
+                        if not result:
+                            print(f"\n[Tracker] Failed to send heartbeat to {name}")
                         proxy._pyroRelease()
-                    except Exception:
-                        pass
-                ns._pyroRelease()
+                    except Exception as e:
+                        print(f"\n[Tracker] Error sending heartbeat to {name}: {e}")
             except Exception as e:
-                print(f"\n[Tracker] Heartbeat error: {e}")
+                print(f"\n[Tracker] Heartbeat loop error: {e}")
             time.sleep(HEARTBEAT_INTERVAL)
-
-    def receive_heartbeat(self, peer_id: str):
-        self._last_seen[peer_id] = time.time()
-        return True
     
-    def stop_heartbeat(self):
-        self._running = False
-        if self._hb_thread.is_alive():
-            self._hb_thread.join(1.0)
+    def get_tracker_peer_id(self):
+        return self.tracker_peer_id

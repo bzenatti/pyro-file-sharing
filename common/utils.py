@@ -1,4 +1,3 @@
-import random
 import time
 import os
 import re
@@ -8,9 +7,6 @@ FILES_DIR = os.path.join(os.getcwd(), "files")
 
 def generate_epoch():
     return int(time.time())
-
-def start_timer_with_random_interval(min_timeout, max_timeout):
-    return time.time() + random.uniform(min_timeout, max_timeout)
 
 def get_daemon_and_ns():
     daemon = Daemon()
@@ -49,14 +45,12 @@ def load_local_files(peer_id: str) -> list[str]:
         if os.path.exists(os.path.join(FILES_DIR, f"file{n}.txt"))
     ]
 
-
 def read_file(file_name: str) -> str | None:
     path = os.path.join(FILES_DIR, file_name)
     if os.path.exists(path):
         with open(path, "r") as f:
             return f.read()
     return None
-
 
 def write_file(file_name: str, content: str) -> None:
     path = os.path.join(FILES_DIR, file_name)

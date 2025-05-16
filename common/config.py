@@ -1,7 +1,3 @@
-PEER_NAMES = ["Peer1", "Peer2", "Peer3", "Peer4", "Peer5"]
-NS_HOST = "localhost"
-NS_PORT = 9090
-
 HEARTBEAT_INTERVAL = 0.1  
 TRACKER_TIMEOUT_MIN = 0.15
 TRACKER_TIMEOUT_MAX = 0.3

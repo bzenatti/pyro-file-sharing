@@ -1,13 +1,13 @@
 import re
 import threading
-from services.peer import Peer
 import os
+from services.peer import Peer
 
 class PeerMenu(threading.Thread):
     def __init__(self, peer):
         super().__init__()
         self.peer = peer
-        self.daemon = True  # Make it a daemon thread
+        self.daemon = True 
         self._stop_event = threading.Event()
         
     def run(self):
@@ -16,7 +16,6 @@ class PeerMenu(threading.Thread):
             print("1. List available files")
             print("2. Query and download a file")
             print("3. View active peers")
-            print("4. Exit")
 
             try:
                 choice = input("Enter your choice: ")
@@ -29,10 +28,6 @@ class PeerMenu(threading.Thread):
                 elif choice == '3':
                     self.peer.update_active_peers()
                     print(f"\nActive peers: {list(self.peer.active_peers.keys())}")
-                elif choice == '4':
-                    print("Exiting.")
-                    self.peer.running = False
-                    break
                 else:
                     print("Invalid choice. Please try again.")
             except (KeyboardInterrupt, EOFError):
