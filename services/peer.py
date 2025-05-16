@@ -79,8 +79,8 @@ class Peer:
 
     def _lookup_tracker(self):
         try:
-            ns       = locate_ns()
-            entries  = ns.list(prefix=TRACKER_NAME_PREFIX)
+            ns = locate_ns()
+            entries = ns.list(prefix=TRACKER_NAME_PREFIX)
             if not entries:
                 ns._pyroRelease()
                 return None
@@ -88,6 +88,7 @@ class Peer:
             latest_epoch = max(int(name.split('_')[-1]) for name in entries)
             uri = entries[f"{TRACKER_NAME_PREFIX}{latest_epoch}"]
             ns._pyroRelease()
+
             return uri
         except Exception:
             return None
@@ -117,7 +118,7 @@ class Peer:
                 ns = locate_ns()
                 peers = [n for n in ns.list(prefix="Peer")]
 
-                votes = 1  # vote for myself
+                votes = 1  
                 self.voted_epochs.add(new_epoch)
 
                 for name in peers:
