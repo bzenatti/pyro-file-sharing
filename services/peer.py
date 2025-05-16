@@ -41,13 +41,7 @@ class Peer:
         print(f"\n[{self.peer_id}] Registered in Name Server with URI: {uri}")
         
         self.tracker_uri = self._lookup_tracker()
-        if self.tracker_uri:
-            self.tracker_peer_id = self._discover_tracker_peer_id()
-            print(f"[{self.peer_id}] discovered tracker: {self.tracker_peer_id}")
-            tracker = Proxy(self.tracker_uri)
-            tracker.register_peer(self.peer_id, self.files)
-            tracker._pyroRelease()
-
+        
         t = threading.Thread(target=self.run_daemon, daemon=True)
         t.start()
         self.threads.append(t)
@@ -59,6 +53,20 @@ class Peer:
         p = threading.Thread(target=self.send_heartbeat_peers, daemon=True)
         p.start()
         self.threads.append(p)
+        
+        if self.tracker_uri:
+            try:
+                self.tracker_peer_id = self._discover_tracker_peer_id()
+                if self.tracker_peer_id:  
+                    print(f"[{self.peer_id}] discovered tracker: {self.tracker_peer_id}")
+                    tracker = Proxy(self.tracker_uri)
+                    tracker.register_peer(self.peer_id, self.files)
+                    tracker._pyroRelease()
+                else:
+                    print(f"[{self.peer_id}] No active tracker found, waiting for election")
+            except Exception as e:
+                print(f"[{self.peer_id}] Failed to register with tracker: {e}")
+                self.tracker_uri = None  
     
     def run_daemon(self):
         if self.daemon:
