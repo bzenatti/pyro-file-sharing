@@ -169,17 +169,26 @@ class Peer:
         while self.running:
             time.sleep(0.01)
 
+
             if self.is_tracker:         
                 continue
 
             elapsed = time.monotonic() - self.last_heartbeat
             if elapsed < self.current_timeout:
                 self.current_timeout = random.uniform(TRACKER_TIMEOUT_MIN,TRACKER_TIMEOUT_MAX)    
-                continue                
+                continue   
 
-            self.last_heartbeat = time.monotonic()  
-            self.current_timeout = random.uniform(TRACKER_TIMEOUT_MIN,TRACKER_TIMEOUT_MAX)
-            self._trigger_election()
+            self.tracker_uri = self._lookup_tracker()
+
+            try:
+                tracker = Proxy(self.tracker_uri)
+                tracker.ping()
+                tracker._pyroRelease()
+                continue
+            except Exception:
+                self.last_heartbeat = time.monotonic()  
+                self.current_timeout = random.uniform(TRACKER_TIMEOUT_MIN,TRACKER_TIMEOUT_MAX)
+                self._trigger_election()
 
     def become_tracker(self, epoch: int = None):
         if self.is_tracker:

@@ -50,6 +50,8 @@ class Tracker:
                    del self.file_index[file]
        print(f"\n[Tracker] Removed peer {peer_id}")
 
+    def ping(self):
+        pass
     def _heartbeat_loop(self):
         while self._running:
             try:
